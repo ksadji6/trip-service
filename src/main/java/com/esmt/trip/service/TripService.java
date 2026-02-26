@@ -56,6 +56,12 @@ public class TripService {
 
         // La tripRef est générée par @PrePersist dans ton entité
         trip = tripRepository.save(trip);
+        try {
+            userServiceClient.incrementTrips(request.getUserId());
+            log.info("Compteur de trajets mis à jour via User-Service.");
+        } catch (Exception e) {
+            log.error("Impossible de mettre à jour le compteur de trajets : {}", e.getMessage());
+        }
 
         // 3. Calcul du tarif (Pricing-Service)
         FareRequest fareRequest = FareRequest.builder()
