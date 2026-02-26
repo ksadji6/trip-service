@@ -13,16 +13,31 @@ public class PricingServiceClientFallback implements PricingServiceClient {
 
     @Override
     public FareResponse calculateFare(FareRequest request) {
-        log.warn("CIRCUIT BREAKER: PricingService indisponible. Application du tarif de secours[cite: 28, 180].");
+        log.warn("CIRCUIT BREAKER: PricingService indisponible pour {}. Application du tarif de secours.", request.getTransportType());
 
-        // Tarif de secours (fallback) fixé à 500 XOF selon les specs
-        BigDecimal fallbackAmount = new BigDecimal("500");
+        // Déterminer le tarif de secours selon le type de transport
+        BigDecimal fallbackAmount;
+        String type = request.getTransportType().toUpperCase();
+
+        switch (type) {
+            case "TER":
+                fallbackAmount = new BigDecimal("800");
+                break;
+            case "BRT":
+                fallbackAmount = new BigDecimal("500");
+                break;
+            case "BUS":
+                fallbackAmount = new BigDecimal("200");
+                break;
+            default:
+                fallbackAmount = new BigDecimal("500");
+        }
 
         return FareResponse.builder()
                 .finalAmount(fallbackAmount)
                 .baseFare(fallbackAmount)
-                .appliedDiscounts(Collections.emptyList())
-                .isFallback(true) // Marqueur pour la base de données (isFallbackFare=true)
+                .appliedDiscounts(Collections.singletonList("Tarif de secours (Mode dégradé)"))
+                .isFallback(true)
                 .build();
     }
 }
