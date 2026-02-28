@@ -6,6 +6,7 @@ import com.esmt.trip.entity.*;
 import com.esmt.trip.event.TripCompletedEvent;
 import com.esmt.trip.repository.TripRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -35,6 +36,7 @@ public class TripService {
     @Value("${app.rabbitmq.exchange:smart-mobility.exchange}")
     private String exchange;
 
+    @CircuitBreaker(name = "pricing-service", fallbackMethod = "fallbackFare")
     @Transactional
     public TripResponse registerTrip(TripRequest request) {
         log.info("Enregistrement trajet pour userId={}, type={}", request.getUserId(), request.getTransportType());
@@ -123,6 +125,17 @@ public class TripService {
 
         return toTripResponse(trip);
     }
+
+    public TripResponse fallbackFare(TripRequest request, Throwable t) {
+        log.error("ATTENTION: Pricing Service indisponible. Mode secours activé.");
+        return TripResponse.builder()
+                .tripRef("FALLBACK-" + System.currentTimeMillis())
+                .amountCharged(new BigDecimal("500")) // Tarif fixe de secours
+                .status("COMPLETED_FALLBACK")
+                .transportType(request.getTransportType())
+                .build();
+    }
+
     public List<TripResponse> getTripHistory(Long userId) {
         return tripRepository.findByUserIdOrderByStartTimeDesc(userId)
                 .stream().map(this::toTripResponse).collect(Collectors.toList());
@@ -142,5 +155,19 @@ public class TripService {
                 .startTime(trip.getStartTime())
                 .endTime(trip.getEndTime())
                 .build();
+    }
+
+    @CircuitBreaker(name = "pricingService", fallbackMethod = "fallbackForPricing")
+    public FareResponse getFare(FareRequest request) {
+        return pricingServiceClient.calculateFare(request);
+    }
+
+    public FareResponse fallbackForPricing(FareRequest request, Throwable t) {
+        log.warn("Circuit Breaker activé ! Le Pricing Service est indisponible.");
+
+        FareResponse response = new FareResponse();
+        response.setFinalAmount(new java.math.BigDecimal("800"));
+        response.setFallback(true);
+        return response;
     }
 }
